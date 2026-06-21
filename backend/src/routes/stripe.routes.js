@@ -94,40 +94,57 @@ router.get("/status", authenticate, async (req, res, next) => {
 // ─────────────────────────────────────────
 router.post("/payment-intent", authenticate, async (req, res, next) => {
   try {
-    const { split_id, currency } = req.body;
+    const { split_id, debt_id } = req.body;
 
-    if (!split_id)
-      return res.status(400).json({ error: "split_id is required" });
+    if (!split_id && !debt_id) {
+      return res.status(400).json({ error: "split_id or debt_id is required" });
+    }
 
-    const userResult = await pool.query(
-      `SELECT s.amount, 
-          s.status,
-          u.stripe_account_id AS payer_stripe_account,
-          payee.stripe_customer_id AS payee_customer_id
-   FROM splits s
-   JOIN transactions t ON t.id = s.transaction_id
-   JOIN users u ON u.id = t.payer_id
-   JOIN users payee ON payee.id = s.payee_id
-   WHERE s.id = $1 AND s.payee_id = $2`,
-      [split_id, req.user.id],
-    );
+    let amount, payer_stripe_account, payee_customer_id;
 
-    if (userResult.rows.length === 0)
-      return res.status(404).json({ error: "Split not found" });
-    const split = userResult.rows[0];
-    if (split.status !== "pending")
-      return res.status(400).json({ error: "Split already responded to" });
+    if (split_id) {
+      const result = await pool.query(
+        `SELECT s.amount, s.status,
+            u.stripe_account_id AS payer_stripe_account,
+            payee.stripe_customer_id AS payee_customer_id
+     FROM splits s
+     JOIN transactions t ON t.id = s.transaction_id
+     JOIN users u ON u.id = t.payer_id
+     JOIN users payee ON payee.id = s.payee_id
+     WHERE s.id = $1 AND s.payee_id = $2`,
+        [split_id, req.user.id],
+      );
+      if (result.rows.length === 0)
+        return res.status(404).json({ error: "Split not found" });
+      if (result.rows[0].status !== "pending")
+        return res.status(400).json({ error: "Split already responded to" });
+      ({ amount, payer_stripe_account, payee_customer_id } = result.rows[0]);
+    } else {
+      const result = await pool.query(
+        `SELECT d.amount,
+            u.stripe_account_id AS payer_stripe_account,
+            payee.stripe_customer_id AS payee_customer_id
+     FROM debts d
+     JOIN users u ON u.id = d.creditor_id
+     JOIN users payee ON payee.id = d.debtor_id
+     WHERE d.id = $1 AND d.debtor_id = $2`,
+        [debt_id, req.user.id],
+      );
+      if (result.rows.length === 0)
+        return res.status(404).json({ error: "Debt not found" });
+      ({ amount, payer_stripe_account, payee_customer_id } = result.rows[0]);
+    }
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(split.amount * 100), // convert to pence
+      amount: Math.round(amount * 100),
       currency: "gbp",
-      ...(split.payee_customer_id && { customer: split.payee_customer_id }), // who is being charged
+      ...(payee_customer_id && { customer: payee_customer_id }),
       payment_method_types: ["card"],
-      ...(split.payer_stripe_account && {
-    transfer_data: { destination: split.payer_stripe_account },
-    application_fee_amount: 2,
-  }),// Settlr takes 2p
-      metadata: { split_id: split_id },
+      ...(payer_stripe_account && {
+        transfer_data: { destination: payer_stripe_account },
+        application_fee_amount: 2,
+      }),
+      metadata: { split_id: split_id || debt_id },
     });
 
     res.json({

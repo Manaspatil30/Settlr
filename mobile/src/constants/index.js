@@ -1,7 +1,7 @@
 // API base URL — points to Docker backend
 // On physical device replace localhost with your machine's local IP
-export const API_URL = 'http://192.168.1.146:5001/api';
-export const SOCKET_URL = 'http://192.168.1.146:5001';
+export const API_URL = 'http://192.168.1.217:5001/api';
+export const SOCKET_URL = 'http://192.168.1.217:5001';
 
 // Settlr brand colours
 export const COLORS = {
