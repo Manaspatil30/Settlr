@@ -25,6 +25,9 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       await AsyncStorage.removeItem('token');
     }
+    if (!error.response) {
+      error.message = 'No internet connection. Please check your network.';
+    }
     return Promise.reject(error);
   }
 );
@@ -74,6 +77,7 @@ export const debtsAPI = {
   getAll:    () => api.get('/debts'),
   getUpcoming: () => api.get('/debts/upcoming'),
   settle:    (id) => api.put(`/debts/${id}/settle`),
+  createPaymentIntent: (id) => api.post('/stripe/payment-intent', { debt_id: id }),
 };
 
 // ─────────────────────────────────────────

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, RefreshControl, Alert
+  TouchableOpacity, RefreshControl, Alert, ActivityIndicator
 } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { transactionsAPI } from '../services/api';
 import { COLORS, SPLIT_STATUS } from '../constants';
 
@@ -17,19 +17,21 @@ const statusConfig = {
 };
 
 const HomeScreen = () => {
-  const dispatch = useDispatch();
   const { user }  = useSelector((state) => state.auth);
   const [transactions, setTransactions] = useState([]);
   const [refreshing,   setRefreshing]   = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const loadTransactions = async () => {
-    try {
-      const res = await transactionsAPI.getAll();
-      setTransactions(res.data.transactions);
-    } catch (err) {
-      console.log('Failed to load transactions');
-    }
-  };
+  try {
+    const res = await transactionsAPI.getAll();
+    setTransactions(res.data.transactions);
+  } catch (err) {
+    Alert.alert('Error', 'Could not load transactions. Check your connection.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => { loadTransactions(); }, []);
 
@@ -38,6 +40,14 @@ const HomeScreen = () => {
     await loadTransactions();
     setRefreshing(false);
   };
+
+  if (loading) {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.lightGrey }}>
+      <ActivityIndicator size="large" color={COLORS.primary} />
+    </View>
+  );
+}
 
   return (
     <View style={styles.container}>
@@ -113,8 +123,6 @@ const styles = StyleSheet.create({
   },
   greeting:    { fontSize: 24, fontWeight: '800', color: COLORS.dark },
   subGreeting: { fontSize: 14, color: COLORS.grey, marginTop: 2 },
-  logoutBtn:   { padding: 8 },
-  logoutText:  { color: COLORS.danger, fontSize: 14, fontWeight: '600' },
   empty: {
     alignItems: 'center',
     marginTop: 100,
