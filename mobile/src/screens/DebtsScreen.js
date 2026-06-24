@@ -4,6 +4,7 @@ import {
   RefreshControl, Alert, ActivityIndicator
 } from 'react-native';
 import { debtsAPI } from '../services/api';
+import { useStripe } from '@stripe/stripe-react-native'
 import { COLORS } from '../constants';
 
 const DebtsScreen = () => {
@@ -11,6 +12,8 @@ const DebtsScreen = () => {
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settling,   setSettling]   = useState(null);
+
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const loadDebts = async () => {
     try {
@@ -33,23 +36,50 @@ const DebtsScreen = () => {
 
   const handleSettle = (debtId, amount, creditorName) => {
     Alert.alert(
-      'Settle Debt',
-      `Mark £${parseFloat(amount).toFixed(2)} owed to ${creditorName} as settled?`,
+      "Settle Debt",
+      `Pay £${parseFloat(amount).toFixed(2)} to ${creditorName}?`,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Settle', onPress: async () => {
-          setSettling(debtId);
-          try {
-            await debtsAPI.settle(debtId);
-            setDebts(prev => prev.filter(d => d.id !== debtId));
-            Alert.alert('✅ Settled', 'Debt marked as settled');
-          } catch (err) {
-            Alert.alert('Error', 'Failed to settle debt');
-          } finally {
-            setSettling(null);
-          }
-        }},
-      ]
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Pay Now",
+          onPress: async () => {
+            setSettling(debtId);
+            try {
+              const res = await debtsAPI.createPaymentIntent(debtId);
+              const { clientSecret } = res.data;
+
+              const { error: initError } = await initPaymentSheet({
+                paymentIntentClientSecret: clientSecret,
+                merchantDisplayName: "Settlr",
+              });
+              if (initError) {
+                Alert.alert("Error", initError.message);
+                return;
+              }
+
+              const { error: payError } = await presentPaymentSheet();
+              if (payError) {
+                Alert.alert("Payment cancelled", payError.message);
+                return;
+              }
+
+              await debtsAPI.settle(debtId);
+              setDebts((prev) => prev.filter((d) => d.id !== debtId));
+              Alert.alert(
+                "✅ Paid!",
+                `£${parseFloat(amount).toFixed(2)} sent to ${creditorName}`,
+              );
+            } catch (err) {
+              Alert.alert(
+                "Error",
+                err.response?.data?.error || "Payment failed",
+              );
+            } finally {
+              setSettling(null);
+            }
+          },
+        },
+      ],
     );
   };
 

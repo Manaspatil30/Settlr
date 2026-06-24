@@ -12,6 +12,7 @@
   "author": "Manas Patil",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.18.1",
     "bcryptjs": "^3.0.3",
     "bull": "^4.16.5",
     "cors": "^2.8.6",

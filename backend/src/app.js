@@ -2,6 +2,7 @@ const express     = require('express');
 const cors        = require('cors');
 const helmet      = require('helmet');
 const rateLimit   = require('express-rate-limit');
+const bankingRoutes = require('./routes/banking.routes');
 
 // Routes
 const authRoutes        = require('./routes/auth.routes');
@@ -62,6 +63,7 @@ app.use('/api/splits',       authenticate, splitRoutes);
 app.use('/api/debts',        authenticate, debtRoutes);
 app.use('/api/disputes',     authenticate, disputeRoutes);
 app.use('/api/stripe',       stripeRoutes);
+app.use('/api/banking', bankingRoutes);
 
 // ─────────────────────────────────────────
 // 404 HANDLER

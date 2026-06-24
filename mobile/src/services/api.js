@@ -59,6 +59,12 @@ export const transactionsAPI = {
   getAll:  ()     => api.get('/transactions'),
 };
 
+export const bankingAPI = {
+  connect:           () => api.get('/banking/connect'),
+  getStatus:         () => api.get('/banking/status'),
+  checkTransactions: () => api.post('/banking/check-transactions'),
+};
+
 // ─────────────────────────────────────────
 // SPLITS
 // ─────────────────────────────────────────
