@@ -153,4 +153,4 @@ const sendDebtReminder = async (debtId) => {
   );
 };
 
-module.exports = { sendSplitRequest, sendPayerNotification, sendDebtReminder };
+module.exports = { sendPushToUser, sendSplitRequest, sendPayerNotification, sendDebtReminder };

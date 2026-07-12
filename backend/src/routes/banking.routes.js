@@ -67,7 +67,7 @@ router.get('/callback', async (req, res) => {
 // Called manually or by a scheduled job
 // Checks for new payments and notifies user
 // ─────────────────────────────────────────
-router.post('/check-transactions', authenticate, async (req, res) => {
+router.post('/check-transactions', authenticate, async (req, res, next) => {
   try {
     const result = await pool.query(
       'SELECT truelayer_access_token, truelayer_connected FROM users WHERE id = $1',
@@ -113,7 +113,7 @@ router.post('/check-transactions', authenticate, async (req, res) => {
 // GET /api/banking/status
 // Check if user has connected their bank
 // ─────────────────────────────────────────
-router.get('/status', authenticate, async (req, res) => {
+router.get('/status', authenticate, async (req, res, next) => {
   try {
     const result = await pool.query(
       'SELECT truelayer_connected FROM users WHERE id = $1',

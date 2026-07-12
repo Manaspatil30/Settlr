@@ -12,16 +12,20 @@ const REDIRECT_URI  = process.env.TRUELAYER_REDIRECT_URI;
 // so they can log in with their bank
 // ─────────────────────────────────────────
 const getAuthUrl = (userId) => {
+  const nonce = Math.random().toString(36).substring(2);
   const params = new URLSearchParams({
     response_type: 'code',
     client_id:     CLIENT_ID,
-    scope:         'info accounts balance transactions offline_access',
+    scope:         'accounts balance transactions offline_access',
     redirect_uri:  REDIRECT_URI,
-    providers:     'uk-ob-all uk-oauth-all',
-    state:         userId, // we pass userId so we know who connected on callback
+    nonce,
+    providers:     'uk-cs-mock',
+    state:         userId,
   });
 
-  return `${TRUELAYER_AUTH_URL}/?${params.toString()}`;
+  const url = `${TRUELAYER_AUTH_URL}/?${params.toString()}`;
+  console.log('🔗 TrueLayer auth URL:', url);
+  return url;
 };
 
 // ─────────────────────────────────────────
@@ -46,18 +50,27 @@ const exchangeCode = async (code) => {
 // Called after webhook or on demand
 // ─────────────────────────────────────────
 const getTransactions = async (accessToken) => {
-  const res = await axios.get(
-    `${TRUELAYER_API_URL}/data/v1/transactions`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params:  {
-        from: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // last 5 minutes
-        to:   new Date().toISOString(),
-      },
-    }
-  );
+  const headers = { Authorization: `Bearer ${accessToken}` };
 
-  return res.data.results;
+  // Step 1 — get accounts
+  const accountsRes = await axios.get(`${TRUELAYER_API_URL}/data/v1/accounts`, { headers });
+  const accounts = accountsRes.data.results;
+
+  if (!accounts || accounts.length === 0) return [];
+
+  // Step 2 — get transactions for the first account
+  const accountId = accounts[0].account_id;
+  const from = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const to   = new Date().toISOString();
+
+  const [txRes, pendingRes] = await Promise.all([
+    axios.get(`${TRUELAYER_API_URL}/data/v1/accounts/${accountId}/transactions`, { headers, params: { from, to } }).catch(() => ({ data: { results: [] } })),
+    axios.get(`${TRUELAYER_API_URL}/data/v1/accounts/${accountId}/transactions/pending`, { headers }).catch(() => ({ data: { results: [] } })),
+  ]);
+
+  const all = [...(txRes.data.results || []), ...(pendingRes.data.results || [])];
+  // Only debits — money leaving the account (negative amount = the user paid)
+  return all.filter(t => t.amount < 0);
 };
 
 // ─────────────────────────────────────────

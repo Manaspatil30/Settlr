@@ -1,9 +1,10 @@
 import React, { useEffect } from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useDispatch, useSelector } from "react-redux";
 import { Text, ActivityIndicator, View } from "react-native";
+import * as Notifications from 'expo-notifications';
 
 import { loadUser } from "../store/slices/authSlice";
 import { connectSocket, disconnectSocket } from "../services/socket";
@@ -21,6 +22,7 @@ import ProfileScreen from "../screens/ProfileScreen";
 import { registerForPushNotifications } from "../services/notifications";
 import { usersAPI } from "../services/api";
 
+export const navigationRef = createNavigationContainerRef();
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -119,6 +121,19 @@ const AppNavigator = () => {
     }
   }, [token]);
 
+  useEffect(() => {
+  const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+    const data = response.notification.request.content.data;
+    if (data?.screen === 'NewSplit' && navigationRef.isReady()) {
+      navigationRef.navigate('NewSplit', {
+        amount:   data.amount,
+        merchant: data.merchant,
+      });
+    }
+  });
+  return () => subscription.remove();
+}, []);
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -128,7 +143,7 @@ const AppNavigator = () => {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <Stack.Screen name="Main" component={MainTabs} />

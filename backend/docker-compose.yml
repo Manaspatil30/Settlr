@@ -64,7 +64,11 @@ services:
       JWT_SECRET:       2dc046a0126b1f72ae7aa0d746c8cfffb682f3bc4676b0100361fb403fbc67bb87ac542ec362174c4b3c0d53348b6b91e4135eecb5aa0996a644147c63422a87
       JWT_EXPIRES_IN:   7d
       CLIENT_URL:       http://localhost:3000
-      # Add Stripe + Firebase keys here when ready
+      STRIPE_SECRET_KEY:          sk_test_51TQmYtFxe8KECdzDr1wLsIOmOeulW4KsU2gqIHgoE0uT2yoae5HoOegXN4HxhbLIIvsxTdpkzXQJQ1gunuZfsDwu00bDRBcPg2
+      STRIPE_WEBHOOK_SECRET:      whsec_your_webhook_secret_here
+      TRUELAYER_CLIENT_ID:        sandbox-settlr-c6cf3e
+      TRUELAYER_CLIENT_SECRET:    49a4ea86-5574-4759-88d6-99a7924286d4
+      TRUELAYER_REDIRECT_URI:     https://novel-tba-behavior-caring.trycloudflare.com/api/banking/callback
     volumes:
       - .:/app                        # Hot reload — your code changes reflect instantly
       - /app/node_modules             # Don't overwrite container's node_modules

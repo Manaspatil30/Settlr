@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform
@@ -6,7 +6,7 @@ import {
 import { usersAPI, transactionsAPI } from '../services/api';
 import { COLORS } from '../constants';
 
-const NewSplitScreen = ({ navigation }) => {
+const NewSplitScreen = ({ navigation, route }) => {
   const [merchantName, setMerchantName]   = useState('');
   const [totalAmount,  setTotalAmount]    = useState('');
   const [searchQuery,  setSearchQuery]    = useState('');
@@ -15,6 +15,15 @@ const NewSplitScreen = ({ navigation }) => {
   const [loading,       setLoading]       = useState(false);
   const [searching,     setSearching]     = useState(false);
 
+
+  useEffect(() => {
+    if (route.params?.amount) {
+      setTotalAmount(String(route.params.amount));
+    }
+    if (route.params?.merchant) {
+      setMerchantName(route.params.merchant);
+    }
+  }, [route.params]);
   // ─────────────────────────────────────────
   // Search for users by email or phone
   // ─────────────────────────────────────────

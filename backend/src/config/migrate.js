@@ -63,11 +63,14 @@ const migrate = async () => {
         email               VARCHAR(150)  UNIQUE NOT NULL,
         phone               VARCHAR(20)   UNIQUE,
         password_hash       TEXT          NOT NULL,
-        stripe_customer_id  VARCHAR(100),
-        stripe_account_id   VARCHAR(100),
-        fcm_token           TEXT,
-        created_at          TIMESTAMP     DEFAULT NOW(),
-        updated_at          TIMESTAMP     DEFAULT NOW()
+        stripe_customer_id       VARCHAR(100),
+        stripe_account_id        VARCHAR(100),
+        fcm_token                TEXT,
+        truelayer_access_token   TEXT,
+        truelayer_refresh_token  TEXT,
+        truelayer_connected      BOOLEAN       DEFAULT FALSE,
+        created_at               TIMESTAMP     DEFAULT NOW(),
+        updated_at               TIMESTAMP     DEFAULT NOW()
       );
     `);
 

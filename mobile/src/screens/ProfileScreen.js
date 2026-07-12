@@ -11,8 +11,8 @@ import {
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { logoutUser } from "../store/slices/authSlice";
-import { stripeAPI } from "../services/api";
 import { COLORS } from "../constants";
+import { stripeAPI, bankingAPI } from '../services/api';
 
 const ProfileScreen = () => {
   const dispatch = useDispatch();
@@ -22,10 +22,16 @@ const ProfileScreen = () => {
   const [loadingStripe, setLoadingStripe] = useState(true);
   const [connecting, setConnecting] = useState(false);
 
+  const [bankingConnected, setBankingConnected] = useState(false);
+  const [loadingBank, setLoadingBank] = useState(true);
+  const [connectingBank, setConnectingBank] = useState(false);
+  const [simulating, setSimulating] = useState(false);
+
   // Load Stripe status on mount
   useEffect(() => {
-    loadStripeStatus();
-  }, []);
+  loadStripeStatus();
+  loadBankingStatus();
+}, []);
 
   const loadStripeStatus = async () => {
     try {
@@ -35,6 +41,34 @@ const ProfileScreen = () => {
       setStripeStatus(null);
     } finally {
       setLoadingStripe(false);
+    }
+  };
+
+  const loadBankingStatus = async () => {
+    try {
+      const res = await bankingAPI.getStatus();
+      setBankingConnected(res.data.connected);
+    } catch (err) {
+      setBankingConnected(false);
+    } finally {
+      setLoadingBank(false);
+    }
+  };
+
+  const handleConnectBank = async () => {
+    setConnectingBank(true);
+    try {
+      const res = await bankingAPI.connect();
+      await Linking.openURL(res.data.url);
+      Alert.alert(
+        "Connect your bank",
+        "Log in with your bank in the browser. When done, return to Settlr.",
+        [{ text: "Got it", onPress: () => loadBankingStatus() }],
+      );
+    } catch (err) {
+      Alert.alert("Error", "Could not connect bank. Try again.");
+    } finally {
+      setConnectingBank(false);
     }
   };
 
@@ -65,6 +99,22 @@ const ProfileScreen = () => {
       );
     } finally {
       setConnecting(false);
+    }
+  };
+
+  const handleSimulatePayment = async () => {
+    setSimulating(true);
+    try {
+      const res = await bankingAPI.checkTransactions();
+      if (res.data.message === 'No recent transactions') {
+        Alert.alert('No transactions', 'No recent payments detected from the mock bank.');
+      } else {
+        Alert.alert('💸 Payment detected!', `£${res.data.amount} at ${res.data.merchant} — check your notifications.`);
+      }
+    } catch (err) {
+      Alert.alert('Error', err.response?.data?.error || 'Could not check transactions.');
+    } finally {
+      setSimulating(false);
     }
   };
 
@@ -129,6 +179,52 @@ const ProfileScreen = () => {
                 <Text style={styles.stripeBtnText}>
                   {stripePartial ? "Complete Setup" : "Connect Bank Account"}
                 </Text>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
+      {/* ── Bank Connection Card ── */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Auto-Split Detection</Text>
+
+        {loadingBank ? (
+          <ActivityIndicator color={COLORS.primary} style={{ marginTop: 8 }} />
+        ) : bankingConnected ? (
+          <>
+            <View style={styles.stripeReady}>
+              <Text style={styles.stripeReadyIcon}>✅</Text>
+              <Text style={styles.stripeReadyText}>
+                Bank connected — auto detection active
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.simulateBtn, simulating && { opacity: 0.7 }]}
+              onPress={handleSimulatePayment}
+              disabled={simulating}
+            >
+              {simulating
+                ? <ActivityIndicator color={COLORS.primary} size="small" />
+                : <Text style={styles.simulateBtnText}>💸 Simulate Payment</Text>
+              }
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.stripeDesc}>
+              Connect your bank so Settlr can detect when you pay and instantly
+              ask if you want to split.
+            </Text>
+            <TouchableOpacity
+              style={[styles.stripeBtn, connectingBank && { opacity: 0.7 }]}
+              onPress={handleConnectBank}
+              disabled={connectingBank}
+            >
+              {connectingBank ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <Text style={styles.stripeBtnText}>Connect Bank Account</Text>
               )}
             </TouchableOpacity>
           </>
@@ -228,6 +324,16 @@ const styles = StyleSheet.create({
   },
   detailLabel: { fontSize: 14, color: COLORS.grey },
   detailValue: { fontSize: 14, fontWeight: "600", color: COLORS.dark },
+  simulateBtn: {
+    marginTop: 14,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '10',
+  },
+  simulateBtnText: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
   logoutBtn: {
     marginHorizontal: 16,
     marginTop: 8,
