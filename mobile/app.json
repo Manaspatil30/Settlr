@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.settlr.app"
+      "bundleIdentifier": "com.manaspatil.settlr"
     },
     "android": {
       "adaptiveIcon": {
@@ -30,7 +30,7 @@
       [
         "@stripe/stripe-react-native",
         {
-          "merchantIdentifier": "merchant.com.settlr",
+          "merchantIdentifier": "",
           "enableGooglePay": false
         }
       ]

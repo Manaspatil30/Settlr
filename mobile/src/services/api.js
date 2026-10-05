@@ -22,7 +22,12 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
+    const authErrors = ['No token provided', 'Invalid token', 'Token expired'];
+    const isAuthError =
+      error.response?.status === 401 &&
+      authErrors.some((msg) => error.response?.data?.error?.includes(msg));
+
+    if (isAuthError) {
       await AsyncStorage.removeItem('token');
     }
     if (!error.response) {
@@ -63,6 +68,18 @@ export const bankingAPI = {
   connect:           () => api.get('/banking/connect'),
   getStatus:         () => api.get('/banking/status'),
   checkTransactions: () => api.post('/banking/check-transactions'),
+};
+
+export const disputesAPI = {
+  getAll:  ()  => api.get('/disputes'),
+  resolve: (id) => api.put(`/disputes/${id}/resolve`),
+};
+
+export const friendsAPI = {
+  getAll:    ()          => api.get('/friends'),
+  getRecents:()          => api.get('/friends/recents'),
+  add:       (friend_id) => api.post('/friends', { friend_id }),
+  remove:    (friend_id) => api.delete(`/friends/${friend_id}`),
 };
 
 // ─────────────────────────────────────────

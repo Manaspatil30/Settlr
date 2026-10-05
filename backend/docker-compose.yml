@@ -65,10 +65,10 @@ services:
       JWT_EXPIRES_IN:   7d
       CLIENT_URL:       http://localhost:3000
       STRIPE_SECRET_KEY:          sk_test_51TQmYtFxe8KECdzDr1wLsIOmOeulW4KsU2gqIHgoE0uT2yoae5HoOegXN4HxhbLIIvsxTdpkzXQJQ1gunuZfsDwu00bDRBcPg2
-      STRIPE_WEBHOOK_SECRET:      whsec_your_webhook_secret_here
+      STRIPE_WEBHOOK_SECRET:      whsec_4a1c9cf435378486e130c1b9cdcceb7ee134c154ce09d0e09aeee903ebc346a4
       TRUELAYER_CLIENT_ID:        sandbox-settlr-c6cf3e
       TRUELAYER_CLIENT_SECRET:    49a4ea86-5574-4759-88d6-99a7924286d4
-      TRUELAYER_REDIRECT_URI:     https://novel-tba-behavior-caring.trycloudflare.com/api/banking/callback
+      TRUELAYER_REDIRECT_URI:     https://wednesday-accessible-janet-persons.trycloudflare.com/api/banking/callback
     volumes:
       - .:/app                        # Hot reload — your code changes reflect instantly
       - /app/node_modules             # Don't overwrite container's node_modules

@@ -12,6 +12,7 @@ const splitRoutes       = require('./routes/split.routes');
 const debtRoutes        = require('./routes/debt.routes');
 const disputeRoutes     = require('./routes/dispute.routes');
 const stripeRoutes      = require('./routes/stripe.routes');
+const friendsRoutes     = require('./routes/friends.routes');
 
 // Middleware
 const { errorHandler } = require('./middleware/error.middleware');
@@ -43,6 +44,10 @@ const authLimiter = rateLimit({
 });
 
 app.use(globalLimiter);
+
+// Stripe webhook needs raw body BEFORE express.json() parses it
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -63,7 +68,8 @@ app.use('/api/splits',       authenticate, splitRoutes);
 app.use('/api/debts',        authenticate, debtRoutes);
 app.use('/api/disputes',     authenticate, disputeRoutes);
 app.use('/api/stripe',       stripeRoutes);
-app.use('/api/banking', bankingRoutes);
+app.use('/api/banking',      bankingRoutes);
+app.use('/api/friends',      friendsRoutes);
 
 // ─────────────────────────────────────────
 // 404 HANDLER

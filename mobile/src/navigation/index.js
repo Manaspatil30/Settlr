@@ -18,8 +18,9 @@ import NewSplitScreen from "../screens/NewSplitScreen";
 import PendingSplitsScreen from "../screens/PendingSplitsScreen";
 import DebtsScreen from "../screens/DebtsScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import DisputesScreen from "../screens/DisputesScreen";
 
-import { registerForPushNotifications } from "../services/notifications";
+import { registerForPushNotifications, registerNotificationCategories } from "../services/notifications";
 import { usersAPI } from "../services/api";
 
 export const navigationRef = createNavigationContainerRef();
@@ -107,6 +108,11 @@ const AppNavigator = () => {
     dispatch(loadUser());
   }, []);
 
+  // Register notification action categories once on mount
+  useEffect(() => {
+    registerNotificationCategories().catch(() => {});
+  }, []);
+
   // Connect/disconnect WebSocket based on login state
   useEffect(() => {
     if (token) {
@@ -122,17 +128,44 @@ const AppNavigator = () => {
   }, [token]);
 
   useEffect(() => {
-  const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-    const data = response.notification.request.content.data;
-    if (data?.screen === 'NewSplit' && navigationRef.isReady()) {
-      navigationRef.navigate('NewSplit', {
-        amount:   data.amount,
-        merchant: data.merchant,
-      });
-    }
-  });
-  return () => subscription.remove();
-}, []);
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const { actionIdentifier } = response;
+      const data = response.notification.request.content.data;
+
+      if (!navigationRef.isReady()) return;
+
+      // ── Payment detected — "Split this payment?" ──
+      if (data?.type === 'banking:transaction' || data?.screen === 'NewSplit') {
+        if (actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER || actionIdentifier === 'SPLIT') {
+          navigationRef.navigate('NewSplit', {
+            amount:   data.amount,
+            merchant: data.merchant,
+          });
+        }
+        // SKIP — do nothing, notification dismissed
+        return;
+      }
+
+      // ── Split request from a friend ──
+      if (data?.type === 'split:request') {
+        if (actionIdentifier === 'PAY_NOW') {
+          navigationRef.navigate('Pending', { autoOpenSplit: data.split_id, intent: 'pay_now' });
+        } else if (actionIdentifier === 'PAY_LATER') {
+          navigationRef.navigate('Pending', { autoOpenSplit: data.split_id, intent: 'pay_later' });
+        } else {
+          // Default tap — just open Pending screen
+          navigationRef.navigate('Pending');
+        }
+        return;
+      }
+
+      // ── Debt reminder ──
+      if (data?.type === 'debt:reminder') {
+        navigationRef.navigate('Debts');
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   if (loading) {
     return (
@@ -146,7 +179,10 @@ const AppNavigator = () => {
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="Disputes" component={DisputesScreen} />
+          </>
         ) : (
           <>
             <Stack.Screen name="Login" component={LoginScreen} />

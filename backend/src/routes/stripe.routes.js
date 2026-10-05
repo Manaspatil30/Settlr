@@ -7,6 +7,7 @@ const {
   createPaymentIntent,
   getAccountStatus,
 } = require("../services/stripe.service");
+const { sendPayerNotification } = require("../services/notification.service");
 const { authenticate } = require("../middleware/auth.middleware");
 const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
@@ -144,7 +145,12 @@ router.post("/payment-intent", authenticate, async (req, res, next) => {
         transfer_data: { destination: payer_stripe_account },
         application_fee_amount: 2,
       }),
-      metadata: { split_id: split_id || debt_id },
+      metadata: {
+        type:     split_id ? 'split' : 'debt',
+        split_id: split_id ? String(split_id) : '',
+        debt_id:  debt_id  ? String(debt_id)  : '',
+        payee_id: String(req.user.id),
+      },
     });
 
     res.json({
@@ -154,6 +160,87 @@ router.post("/payment-intent", authenticate, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ─────────────────────────────────────────
+// POST /api/stripe/webhook
+// Stripe calls this when a payment succeeds
+// Must use raw body — registered in app.js before express.json()
+// ─────────────────────────────────────────
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig     = req.headers['stripe-signature'];
+  const secret  = process.env.STRIPE_WEBHOOK_SECRET;
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, secret);
+  } catch (err) {
+    console.error('⚠️  Webhook signature failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  console.log(`🔔 Stripe webhook: ${event.type}`);
+
+  if (event.type === 'payment_intent.succeeded') {
+    const pi       = event.data.object;
+    const { type, split_id, debt_id, payee_id } = pi.metadata;
+    console.log(`💳 PaymentIntent metadata:`, { type, split_id, debt_id });
+
+    try {
+      if (type === 'split' && split_id) {
+        const result = await pool.query(
+          `UPDATE splits SET
+             status     = 'settled',
+             settled_at = NOW(),
+             updated_at = NOW()
+           WHERE id = $1 AND status NOT IN ('settled', 'declined')`,
+          [split_id]
+        );
+
+        if (result.rowCount > 0) {
+          const infoRes = await pool.query(
+            `SELECT t.payer_id, s.amount
+             FROM splits s JOIN transactions t ON t.id = s.transaction_id
+             WHERE s.id = $1`,
+            [split_id]
+          );
+          const { payer_id, amount } = infoRes.rows[0];
+          await sendPayerNotification(payer_id, {
+            type:     'split:accepted',
+            message:  `Payment received — £${amount} is on its way to you.`,
+            split_id,
+          });
+          console.log(`✅ Webhook: split ${split_id} settled`);
+        }
+      }
+
+      if (type === 'debt' && debt_id) {
+        const result = await pool.query(
+          `UPDATE debts SET
+             settled_at = NOW(),
+             updated_at = NOW()
+           WHERE id = $1 AND settled_at IS NULL
+           RETURNING creditor_id, amount`,
+          [debt_id]
+        );
+
+        if (result.rows.length > 0) {
+          const { creditor_id, amount } = result.rows[0];
+          await sendPayerNotification(creditor_id, {
+            type:    'debt:settled',
+            message: `Payment received — £${amount} debt has been settled.`,
+            split_id: debt_id,
+          });
+          console.log(`✅ Webhook: debt ${debt_id} settled`);
+        }
+      }
+    } catch (err) {
+      console.error('❌ Webhook handler error:', err.message);
+      // Still return 200 so Stripe doesn't retry — the error is logged
+    }
+  }
+
+  res.json({ received: true });
 });
 
 module.exports = router;

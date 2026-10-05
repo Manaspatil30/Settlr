@@ -1,7 +1,7 @@
 const pool                 = require('../config/db');
 const { emitToUser }       = require('../config/socket');
 const { sendSplitRequest } = require('../services/notification.service');
-const { scheduleNoResponseCheck } = require('../services/reminder.service');
+const { scheduleNoResponseCheck, scheduleSplitNudge } = require('../services/reminder.service');
 
 // POST /api/transactions/create
 // Body: { total_amount, currency, merchant_name, splits: [{ payee_id, amount }] }
@@ -61,7 +61,10 @@ const createTransaction = async (req, res, next) => {
         payer_name: req.user.name
       });
 
-      // Schedule no-response check after 1 hour
+      // Nudge after 30 min if still pending
+      await scheduleSplitNudge(split.id, 30 * 60 * 1000);
+
+      // Convert to debt after 1 hour if no response
       await scheduleNoResponseCheck(split.id, 60 * 60 * 1000);
     }
 

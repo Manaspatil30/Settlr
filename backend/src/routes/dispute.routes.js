@@ -27,11 +27,19 @@ router.post('/', async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT d.*, u.name AS raised_by_name
+      `SELECT d.*,
+              raiser.name    AS raised_by_name,
+              payer.name     AS payer_name,
+              payee.name     AS payee_name,
+              t.merchant_name,
+              s.amount
        FROM disputes d
-       JOIN users u ON u.id = d.raised_by
-       JOIN splits s ON s.id = d.split_id
-       WHERE s.payee_id = $1 OR d.raised_by = $1
+       JOIN splits s       ON s.id  = d.split_id
+       JOIN transactions t ON t.id  = s.transaction_id
+       JOIN users raiser   ON raiser.id = d.raised_by
+       JOIN users payer    ON payer.id  = t.payer_id
+       JOIN users payee    ON payee.id  = s.payee_id
+       WHERE t.payer_id = $1 OR s.payee_id = $1
        ORDER BY d.created_at DESC`,
       [req.user.id]
     );

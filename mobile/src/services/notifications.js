@@ -11,6 +11,37 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Register actionable notification categories (buttons that appear on the notification)
+export const registerNotificationCategories = async () => {
+  // Shown to Manas when a payment is detected — "Split this payment?"
+  await Notifications.setNotificationCategoryAsync('PAYMENT_SPLIT', [
+    {
+      identifier: 'SPLIT',
+      buttonTitle: '✅ Split',
+      options: { opensAppToForeground: true },
+    },
+    {
+      identifier: 'SKIP',
+      buttonTitle: 'Skip',
+      options: { opensAppToForeground: false },
+    },
+  ]);
+
+  // Shown to friends when they receive a split request
+  await Notifications.setNotificationCategoryAsync('SPLIT_REQUEST', [
+    {
+      identifier: 'PAY_NOW',
+      buttonTitle: '💳 Pay Now',
+      options: { opensAppToForeground: true },
+    },
+    {
+      identifier: 'PAY_LATER',
+      buttonTitle: '⏰ Pay Later',
+      options: { opensAppToForeground: true },
+    },
+  ]);
+};
+
 export const registerForPushNotifications = async () => {
   // Push tokens don't work on simulators — only real devices
   if (!Device.isDevice) {

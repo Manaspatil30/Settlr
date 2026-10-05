@@ -10,6 +10,7 @@ import {
   Linking,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
+import * as Notifications from 'expo-notifications';
 import { logoutUser } from "../store/slices/authSlice";
 import { COLORS } from "../constants";
 import { stripeAPI, bankingAPI } from '../services/api';
@@ -108,11 +109,37 @@ const ProfileScreen = () => {
       const res = await bankingAPI.checkTransactions();
       if (res.data.message === 'No recent transactions') {
         Alert.alert('No transactions', 'No recent payments detected from the mock bank.');
-      } else {
-        Alert.alert('💸 Payment detected!', `£${res.data.amount} at ${res.data.merchant} — check your notifications.`);
+        return;
       }
+
+      const { amount, merchant } = res.data;
+
+      // Schedule a local notification in 3 seconds so the user has time to background the app
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '💸 Split this payment?',
+          body: `You paid £${amount} at ${merchant}`,
+          categoryIdentifier: 'PAYMENT_SPLIT',
+          data: { type: 'banking:transaction', screen: 'NewSplit', amount, merchant },
+        },
+        trigger: { seconds: 3 },
+      });
+
+      Alert.alert(
+        'Payment detected!',
+        `£${amount} at ${merchant} — background the app now to see the Split / Skip buttons.`,
+        [{ text: 'Got it' }]
+      );
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || 'Could not check transactions.');
+      const message = err.response?.data?.error || 'Could not check transactions.';
+      const isExpired = message.includes('reconnect');
+      Alert.alert(
+        isExpired ? 'Bank session expired' : 'Error',
+        message,
+        isExpired
+          ? [{ text: 'OK', onPress: () => setBankingConnected(false) }]
+          : [{ text: 'OK' }]
+      );
     } finally {
       setSimulating(false);
     }

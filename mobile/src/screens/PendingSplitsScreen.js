@@ -14,13 +14,22 @@ import { COLORS } from '../constants';
 import { useStripe } from '@stripe/stripe-react-native';
 import { splitsAPI } from '../services/api';
 
-const PAY_LATER_OPTIONS = [
-  { label: 'Tonight',    value: () => { const d = new Date(); d.setHours(21,0,0,0); return d.toISOString(); } },
-  { label: 'This week',  value: () => { const d = new Date(); d.setDate(d.getDate() + (7 - d.getDay())); d.setHours(21,0,0,0); return d.toISOString(); } },
-  { label: 'This month', value: () => { const d = new Date(); d.setMonth(d.getMonth()+1, 0); d.setHours(21,0,0,0); return d.toISOString(); } },
+const addDays = (days) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(21, 0, 0, 0);
+  return d;
+};
+
+const PAY_LATER_PRESETS = [
+  { label: '1 day',  date: () => addDays(1) },
+  { label: '3 days', date: () => addDays(3) },
+  { label: '5 days', date: () => addDays(5) },
 ];
 
-const PendingSplitsScreen = () => {
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const PendingSplitsScreen = ({ route }) => {
   const dispatch = useDispatch();
   const { pending, loading } = useSelector((state) => state.splits);
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
@@ -31,10 +40,28 @@ const PendingSplitsScreen = () => {
   const [declineModal,    setDeclineModal]     = useState(false);
   const [declineReason,   setDeclineReason]    = useState('');
   const [selectedSplitId, setSelectedSplitId] = useState(null);
+  const [showCustomDate,  setShowCustomDate]   = useState(false);
+  const [customDate,      setCustomDate]       = useState(() => addDays(7));
 
   useEffect(() => {
     dispatch(fetchPendingSplits());
   }, []);
+
+  // Auto-trigger Pay Now or Pay Later when opened from notification button
+  useEffect(() => {
+    const { autoOpenSplit, intent } = route?.params || {};
+    if (!autoOpenSplit || pending.length === 0) return;
+
+    const splitId = String(autoOpenSplit);
+    const match = pending.find((s) => String(s.id) === splitId);
+    if (!match) return;
+
+    if (intent === 'pay_now') {
+      handleAccept(match.id);
+    } else if (intent === 'pay_later') {
+      openPayLater(match.id);
+    }
+  }, [pending, route?.params]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -83,16 +110,31 @@ const handleAccept = async (splitId) => {
   // ─── Pay Later ───
   const openPayLater = (splitId) => {
     setSelectedSplitId(splitId);
+    setShowCustomDate(false);
+    setCustomDate(addDays(7));
     setPayLaterModal(true);
   };
 
-  const handlePayLater = async (getDueDate) => {
-    const due_date = getDueDate();
+  const handlePayLater = async (date) => {
+    const due_date = date.toISOString();
     setPayLaterModal(false);
+    setShowCustomDate(false);
     setActioningSplit(selectedSplitId);
     await dispatch(payLaterSplit({ splitId: selectedSplitId, due_date }));
     setActioningSplit(null);
-    Alert.alert('⏳ Noted', `You've committed to pay by ${new Date(due_date).toDateString()}`);
+    Alert.alert('⏳ Noted', `You've committed to pay by ${date.toDateString()}`);
+  };
+
+  const adjustCustomDate = (field, delta) => {
+    setCustomDate(prev => {
+      const d = new Date(prev);
+      if (field === 'day')   d.setDate(d.getDate() + delta);
+      if (field === 'month') d.setMonth(d.getMonth() + delta);
+      if (field === 'year')  d.setFullYear(d.getFullYear() + delta);
+      // Don't allow past dates
+      if (d <= new Date()) return prev;
+      return d;
+    });
   };
 
   // ─── Decline ───
@@ -198,18 +240,93 @@ const handleAccept = async (splitId) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>When will you pay?</Text>
-            {PAY_LATER_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.label}
-                style={styles.modalOption}
-                onPress={() => handlePayLater(opt.value)}
-              >
-                <Text style={styles.modalOptionText}>{opt.label}</Text>
-              </TouchableOpacity>
-            ))}
+
+            {/* Quick presets */}
+            {!showCustomDate && (
+              <>
+                {PAY_LATER_PRESETS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.label}
+                    style={styles.modalOption}
+                    onPress={() => handlePayLater(opt.date())}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modalOptionText}>{opt.label}</Text>
+                      <Text style={styles.modalOptionDate}>{opt.date().toDateString()}</Text>
+                    </View>
+                    <Text style={styles.modalOptionArrow}>›</Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity
+                  style={styles.modalOption}
+                  onPress={() => setShowCustomDate(true)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.modalOptionText}>Custom date</Text>
+                    <Text style={styles.modalOptionDate}>Pick a specific day</Text>
+                  </View>
+                  <Text style={styles.modalOptionArrow}>›</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Custom date picker */}
+            {showCustomDate && (
+              <>
+                <TouchableOpacity onPress={() => setShowCustomDate(false)} style={styles.backBtn}>
+                  <Text style={styles.backBtnText}>‹ Back</Text>
+                </TouchableOpacity>
+                <Text style={styles.customDateLabel}>Select date</Text>
+                <View style={styles.datePickerRow}>
+                  {/* Day */}
+                  <View style={styles.dateColumn}>
+                    <TouchableOpacity onPress={() => adjustCustomDate('day', 1)} style={styles.dateArrow}>
+                      <Text style={styles.dateArrowText}>▲</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateValue}>{customDate.getDate()}</Text>
+                    <TouchableOpacity onPress={() => adjustCustomDate('day', -1)} style={styles.dateArrow}>
+                      <Text style={styles.dateArrowText}>▼</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateUnitLabel}>Day</Text>
+                  </View>
+
+                  {/* Month */}
+                  <View style={styles.dateColumn}>
+                    <TouchableOpacity onPress={() => adjustCustomDate('month', 1)} style={styles.dateArrow}>
+                      <Text style={styles.dateArrowText}>▲</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateValue}>{MONTHS[customDate.getMonth()]}</Text>
+                    <TouchableOpacity onPress={() => adjustCustomDate('month', -1)} style={styles.dateArrow}>
+                      <Text style={styles.dateArrowText}>▼</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateUnitLabel}>Month</Text>
+                  </View>
+
+                  {/* Year */}
+                  <View style={styles.dateColumn}>
+                    <TouchableOpacity onPress={() => adjustCustomDate('year', 1)} style={styles.dateArrow}>
+                      <Text style={styles.dateArrowText}>▲</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateValue}>{customDate.getFullYear()}</Text>
+                    <TouchableOpacity onPress={() => adjustCustomDate('year', -1)} style={styles.dateArrow}>
+                      <Text style={styles.dateArrowText}>▼</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateUnitLabel}>Year</Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.confirmDateBtn}
+                  onPress={() => handlePayLater(customDate)}
+                >
+                  <Text style={styles.confirmDateText}>Confirm — {customDate.toDateString()}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
             <TouchableOpacity
               style={styles.modalCancel}
-              onPress={() => setPayLaterModal(false)}
+              onPress={() => { setPayLaterModal(false); setShowCustomDate(false); }}
             >
               <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -322,10 +439,28 @@ const styles = StyleSheet.create({
   },
   modalTitle:  { fontSize: 20, fontWeight: '800', color: COLORS.dark, marginBottom: 16 },
   modalOption: {
-    paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   modalOptionSelected: { backgroundColor: COLORS.lightGrey, borderRadius: 8 },
-  modalOptionText: { fontSize: 16, color: COLORS.dark },
+  modalOptionText: { fontSize: 16, fontWeight: '600', color: COLORS.dark },
+  modalOptionDate: { fontSize: 12, color: COLORS.grey, marginTop: 2 },
+  modalOptionArrow: { fontSize: 22, color: COLORS.grey },
+
+  backBtn:      { marginBottom: 12 },
+  backBtnText:  { fontSize: 15, color: COLORS.primary, fontWeight: '600' },
+  customDateLabel: { fontSize: 14, color: COLORS.grey, marginBottom: 16, textAlign: 'center' },
+  datePickerRow: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginBottom: 24 },
+  dateColumn:   { alignItems: 'center' },
+  dateArrow:    { padding: 8 },
+  dateArrowText: { fontSize: 18, color: COLORS.primary, fontWeight: '700' },
+  dateValue:    { fontSize: 22, fontWeight: '800', color: COLORS.dark, minWidth: 50, textAlign: 'center' },
+  dateUnitLabel: { fontSize: 11, color: COLORS.grey, marginTop: 4, textTransform: 'uppercase' },
+  confirmDateBtn: {
+    backgroundColor: COLORS.primary, borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center', marginBottom: 8,
+  },
+  confirmDateText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   declineConfirmBtn: {
     backgroundColor: COLORS.danger, borderRadius: 12,
     paddingVertical: 14, alignItems: 'center', marginTop: 16,

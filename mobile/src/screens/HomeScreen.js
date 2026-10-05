@@ -16,7 +16,7 @@ const statusConfig = {
   [SPLIT_STATUS.DECLINED]:    { label: 'Declined',    color: COLORS.danger  },
 };
 
-const HomeScreen = () => {
+const HomeScreen = ({ navigation }) => {
   const { user }  = useSelector((state) => state.auth);
   const [transactions, setTransactions] = useState([]);
   const [refreshing,   setRefreshing]   = useState(false);
@@ -57,7 +57,9 @@ const HomeScreen = () => {
           <Text style={styles.greeting}>Hi, {user?.name?.split(' ')[0]} 👋</Text>
           <Text style={styles.subGreeting}>Your payment history</Text>
         </View>
-        
+        <TouchableOpacity onPress={() => navigation.navigate('Disputes')} style={styles.disputeBtn}>
+          <Text style={styles.disputeBtnText}>⚡ Disputes</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Transaction list */}
@@ -164,6 +166,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   badgeText: { fontSize: 11, fontWeight: '600' },
+  disputeBtn: {
+    backgroundColor: COLORS.danger + '15',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  disputeBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.danger },
 });
 
 export default HomeScreen;

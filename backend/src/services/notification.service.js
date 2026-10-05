@@ -54,7 +54,7 @@ const https = require('https');
 //   }
 // };
 
-const sendPushToUser = async (userId, { title, body, data = {} }) => {
+const sendPushToUser = async (userId, { title, body, data = {}, categoryId }) => {
   try {
     const result = await pool.query(
       'SELECT fcm_token FROM users WHERE id = $1',
@@ -67,7 +67,9 @@ const sendPushToUser = async (userId, { title, body, data = {} }) => {
       return;
     }
 
-    const payload = JSON.stringify({ to: token, title, body, data });
+    const message = { to: token, title, body, data };
+    if (categoryId) message.categoryId = categoryId;
+    const payload = JSON.stringify(message);
 
     const options = {
       hostname: 'exp.host',
@@ -100,12 +102,13 @@ const sendPushToUser = async (userId, { title, body, data = {} }) => {
 // ─────────────────────────────────────────
 const sendSplitRequest = async (split, transaction, payerName) => {
   await sendPushToUser(split.payee_id, {
-    title: 'Settlr — Split Request',
-    body:  `${payerName} paid £${split.amount} at ${transaction.merchant_name || 'a merchant'}. Your share is £${split.amount}.`,
+    title:      `💸 ${payerName} paid at ${transaction.merchant_name || 'a merchant'}`,
+    body:       `Your share is £${split.amount} — don't make them wait!`,
+    categoryId: 'SPLIT_REQUEST',
     data: {
-      type:       'split:request',
-      split_id:   split.id,
-      amount:     String(split.amount),
+      type:     'split:request',
+      split_id: String(split.id),
+      amount:   String(split.amount),
     },
   });
 };
@@ -118,6 +121,35 @@ const sendPayerNotification = async (payerId, { type, message, split_id }) => {
     title: 'Settlr',
     body:  message,
     data: { type, split_id },
+  });
+};
+
+// ─────────────────────────────────────────
+// Nudge a payee who hasn't responded yet
+// ─────────────────────────────────────────
+const sendSplitNudge = async (splitId) => {
+  const result = await pool.query(
+    `SELECT s.*, u.name AS payer_name
+     FROM splits s
+     JOIN transactions t ON t.id = s.transaction_id
+     JOIN users u ON u.id = t.payer_id
+     WHERE s.id = $1 AND s.status = 'pending'`,
+    [splitId]
+  );
+
+  if (!result.rows[0]) return; // Already responded — do nothing
+
+  const split = result.rows[0];
+
+  await sendPushToUser(split.payee_id, {
+    title: `👀 ${split.payer_name} is waiting`,
+    body:  `You still haven't responded to a £${split.amount} split request.`,
+    categoryId: 'SPLIT_REQUEST',
+    data: {
+      type:     'split:request',
+      split_id: String(split.id),
+      amount:   String(split.amount),
+    },
   });
 };
 
@@ -153,4 +185,4 @@ const sendDebtReminder = async (debtId) => {
   );
 };
 
-module.exports = { sendPushToUser, sendSplitRequest, sendPayerNotification, sendDebtReminder };
+module.exports = { sendPushToUser, sendSplitRequest, sendPayerNotification, sendDebtReminder, sendSplitNudge };

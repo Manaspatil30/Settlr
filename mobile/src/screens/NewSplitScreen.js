@@ -3,30 +3,45 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform
 } from 'react-native';
-import { usersAPI, transactionsAPI } from '../services/api';
+import { usersAPI, transactionsAPI, friendsAPI } from '../services/api';
 import { COLORS } from '../constants';
 
 const NewSplitScreen = ({ navigation, route }) => {
-  const [merchantName, setMerchantName]   = useState('');
-  const [totalAmount,  setTotalAmount]    = useState('');
-  const [searchQuery,  setSearchQuery]    = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [selectedUsers, setSelectedUsers] = useState([]);
-  const [loading,       setLoading]       = useState(false);
-  const [searching,     setSearching]     = useState(false);
-
+  const [merchantName,   setMerchantName]   = useState('');
+  const [totalAmount,    setTotalAmount]     = useState('');
+  const [searchQuery,    setSearchQuery]     = useState('');
+  const [searchResults,  setSearchResults]   = useState([]);
+  const [selectedUsers,  setSelectedUsers]   = useState([]);
+  const [friends,        setFriends]         = useState([]);
+  const [recents,        setRecents]         = useState([]);
+  const [loading,        setLoading]         = useState(false);
+  const [searching,      setSearching]       = useState(false);
+  const [loadingFriends, setLoadingFriends]  = useState(true);
 
   useEffect(() => {
-    if (route.params?.amount) {
-      setTotalAmount(String(route.params.amount));
-    }
-    if (route.params?.merchant) {
-      setMerchantName(route.params.merchant);
-    }
+    if (route.params?.amount)   setTotalAmount(String(route.params.amount));
+    if (route.params?.merchant) setMerchantName(route.params.merchant);
   }, [route.params]);
-  // ─────────────────────────────────────────
-  // Search for users by email or phone
-  // ─────────────────────────────────────────
+
+  useEffect(() => {
+    loadFriendsAndRecents();
+  }, []);
+
+  const loadFriendsAndRecents = async () => {
+    try {
+      const [friendsRes, recentsRes] = await Promise.all([
+        friendsAPI.getAll(),
+        friendsAPI.getRecents(),
+      ]);
+      setFriends(friendsRes.data.friends);
+      setRecents(recentsRes.data.recents);
+    } catch (err) {
+      // Non-fatal — search still works
+    } finally {
+      setLoadingFriends(false);
+    }
+  };
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true);
@@ -51,16 +66,20 @@ const NewSplitScreen = ({ navigation, route }) => {
     setSelectedUsers(selectedUsers.filter(u => u.id !== userId));
   };
 
-  // ─────────────────────────────────────────
-  // Calculate equal split amount
-  // ─────────────────────────────────────────
+  const handleAddFriend = async (user) => {
+    try {
+      await friendsAPI.add(user.id);
+      setFriends(prev => [...prev, user]);
+      Alert.alert('✅ Added', `${user.name} added to your friends.`);
+    } catch (err) {
+      Alert.alert('Error', 'Could not add friend');
+    }
+  };
+
   const splitAmount = selectedUsers.length > 0
-    ? (parseFloat(totalAmount) / (selectedUsers.length + 1)).toFixed(2) // +1 for payer
+    ? (parseFloat(totalAmount) / (selectedUsers.length + 1)).toFixed(2)
     : '0.00';
 
-  // ─────────────────────────────────────────
-  // Create transaction
-  // ─────────────────────────────────────────
   const handleCreateSplit = async () => {
     if (!totalAmount || isNaN(parseFloat(totalAmount))) {
       return Alert.alert('Error', 'Enter a valid total amount');
@@ -100,6 +119,39 @@ const NewSplitScreen = ({ navigation, route }) => {
     }
   };
 
+  // Users already selected (exclude from friends/recents lists)
+  const isSelected = (id) => !!selectedUsers.find(u => u.id === id);
+  const isFriend   = (id) => !!friends.find(f => f.id === id);
+
+  // Recents not already in friends list
+  const uniqueRecents = recents.filter(r => !isFriend(r.id));
+
+  const UserRow = ({ user, onAdd, showAddFriend }) => (
+    <View style={styles.userRow}>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{user.name[0].toUpperCase()}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.userName}>{user.name}</Text>
+        <Text style={styles.userEmail}>{user.email}</Text>
+      </View>
+      <View style={styles.rowActions}>
+        {showAddFriend && (
+          <TouchableOpacity style={styles.friendBtn} onPress={() => handleAddFriend(user)}>
+            <Text style={styles.friendBtnText}>+ Friend</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.addBtn, isSelected(user.id) && styles.addBtnSelected]}
+          onPress={() => onAdd(user)}
+          disabled={isSelected(user.id)}
+        >
+          <Text style={styles.addBtnText}>{isSelected(user.id) ? '✓' : '+'}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: COLORS.white }}
@@ -115,11 +167,11 @@ const NewSplitScreen = ({ navigation, route }) => {
 
         {/* Amount */}
         <View style={styles.amountCard}>
-          <Text style={styles.label}>Total Amount</Text>
+          <Text style={styles.amountLabel}>Total Amount</Text>
           <TextInput
             style={styles.amountInput}
             placeholder="£0.00"
-            placeholderTextColor={COLORS.grey}
+            placeholderTextColor="rgba(255,255,255,0.6)"
             value={totalAmount}
             onChangeText={setTotalAmount}
             keyboardType="decimal-pad"
@@ -127,15 +179,60 @@ const NewSplitScreen = ({ navigation, route }) => {
           <TextInput
             style={styles.merchantInput}
             placeholder="Where? (e.g. Bella Italia)"
-            placeholderTextColor={COLORS.grey}
+            placeholderTextColor="rgba(255,255,255,0.6)"
             value={merchantName}
             onChangeText={setMerchantName}
           />
         </View>
 
-        {/* Add people */}
+        {/* Selected users */}
+        {selectedUsers.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Splitting with</Text>
+            {selectedUsers.map(user => (
+              <View key={user.id} style={styles.selectedRow}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{user.name[0].toUpperCase()}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.userName}>{user.name}</Text>
+                  <Text style={styles.splitAmountText}>owes £{totalAmount ? splitAmount : '—'}</Text>
+                </View>
+                <TouchableOpacity onPress={() => removeUser(user.id)}>
+                  <Text style={styles.removeIcon}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Friends list */}
         <View style={styles.section}>
-          <Text style={styles.label}>Split With</Text>
+          <Text style={styles.sectionLabel}>Friends</Text>
+          {loadingFriends ? (
+            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 12 }} />
+          ) : friends.length === 0 ? (
+            <Text style={styles.emptyText}>No friends yet — search below to add people.</Text>
+          ) : (
+            friends.map(user => (
+              <UserRow key={user.id} user={user} onAdd={addUser} showAddFriend={false} />
+            ))
+          )}
+        </View>
+
+        {/* Recents */}
+        {uniqueRecents.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Recent</Text>
+            {uniqueRecents.map(user => (
+              <UserRow key={user.id} user={user} onAdd={addUser} showAddFriend={true} />
+            ))}
+          </View>
+        )}
+
+        {/* Search */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Find someone new</Text>
           <View style={styles.searchRow}>
             <TextInput
               style={[styles.input, { flex: 1 }]}
@@ -144,6 +241,7 @@ const NewSplitScreen = ({ navigation, route }) => {
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
+              onSubmitEditing={handleSearch}
             />
             <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}>
               {searching
@@ -152,37 +250,8 @@ const NewSplitScreen = ({ navigation, route }) => {
               }
             </TouchableOpacity>
           </View>
-
-          {/* Search results */}
           {searchResults.map(user => (
-            <TouchableOpacity key={user.id} style={styles.resultRow} onPress={() => addUser(user)}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{user.name[0].toUpperCase()}</Text>
-              </View>
-              <View>
-                <Text style={styles.resultName}>{user.name}</Text>
-                <Text style={styles.resultEmail}>{user.email}</Text>
-              </View>
-              <Text style={styles.addIcon}>+</Text>
-            </TouchableOpacity>
-          ))}
-
-          {/* Selected users */}
-          {selectedUsers.map(user => (
-            <View key={user.id} style={styles.selectedRow}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{user.name[0].toUpperCase()}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.resultName}>{user.name}</Text>
-                <Text style={styles.splitAmountText}>
-                  owes £{totalAmount ? splitAmount : '—'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => removeUser(user.id)}>
-                <Text style={styles.removeIcon}>✕</Text>
-              </TouchableOpacity>
-            </View>
+            <UserRow key={user.id} user={user} onAdd={addUser} showAddFriend={!isFriend(user.id)} />
           ))}
         </View>
 
@@ -206,9 +275,9 @@ const NewSplitScreen = ({ navigation, route }) => {
 
         {/* Create button */}
         <TouchableOpacity
-          style={[styles.createBtn, loading && { opacity: 0.7 }]}
+          style={[styles.createBtn, (loading || selectedUsers.length === 0) && { opacity: 0.5 }]}
           onPress={handleCreateSplit}
-          disabled={loading}
+          disabled={loading || selectedUsers.length === 0}
         >
           {loading
             ? <ActivityIndicator color={COLORS.white} />
@@ -222,22 +291,20 @@ const NewSplitScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container:     { padding: 20, paddingBottom: 40 },
-  header:        { marginTop: 50, marginBottom: 24 },
-  title:         { fontSize: 28, fontWeight: '800', color: COLORS.dark },
-  subtitle:      { fontSize: 15, color: COLORS.grey, marginTop: 4 },
+  container:    { padding: 20, paddingBottom: 60 },
+  header:       { marginTop: 50, marginBottom: 24 },
+  title:        { fontSize: 28, fontWeight: '800', color: COLORS.dark },
+  subtitle:     { fontSize: 15, color: COLORS.grey, marginTop: 4 },
+
   amountCard: {
     backgroundColor: COLORS.primary,
     borderRadius: 20,
     padding: 20,
     marginBottom: 24,
   },
-  label:         { fontSize: 13, color: COLORS.grey, fontWeight: '600', marginBottom: 8 },
+  amountLabel:  { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '600', marginBottom: 8 },
   amountInput: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: COLORS.white,
-    marginBottom: 12,
+    fontSize: 40, fontWeight: '800', color: COLORS.white, marginBottom: 12,
   },
   merchantInput: {
     backgroundColor: 'rgba(255,255,255,0.2)',
@@ -247,8 +314,60 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 15,
   },
-  section:       { marginBottom: 20 },
-  searchRow:     { flexDirection: 'row', gap: 10, marginBottom: 8 },
+
+  section:      { marginBottom: 20 },
+  sectionLabel: { fontSize: 13, fontWeight: '700', color: COLORS.grey, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
+  emptyText:    { fontSize: 14, color: COLORS.grey, fontStyle: 'italic' },
+
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    gap: 12,
+  },
+  avatar: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  avatarText:   { color: COLORS.white, fontWeight: '700', fontSize: 16 },
+  userName:     { fontSize: 15, fontWeight: '600', color: COLORS.dark },
+  userEmail:    { fontSize: 12, color: COLORS.grey },
+  rowActions:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  friendBtn: {
+    backgroundColor: COLORS.primary + '15',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '40',
+  },
+  friendBtnText: { fontSize: 12, color: COLORS.primary, fontWeight: '600' },
+  addBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  addBtnSelected: { backgroundColor: COLORS.success },
+  addBtnText:   { color: COLORS.white, fontSize: 18, fontWeight: '700' },
+
+  selectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '30',
+  },
+  splitAmountText: { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
+  removeIcon:   { fontSize: 16, color: COLORS.danger, padding: 4 },
+
+  searchRow:    { flexDirection: 'row', gap: 10, marginBottom: 8 },
   input: {
     backgroundColor: COLORS.lightGrey,
     borderRadius: 12,
@@ -266,37 +385,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   searchBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  resultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: COLORS.lightGrey,
-    borderRadius: 12,
-    marginBottom: 8,
-    gap: 12,
-  },
-  avatar: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  avatarText:    { color: COLORS.white, fontWeight: '700', fontSize: 16 },
-  resultName:    { fontSize: 15, fontWeight: '600', color: COLORS.dark },
-  resultEmail:   { fontSize: 12, color: COLORS.grey },
-  addIcon:       { fontSize: 22, color: COLORS.primary, fontWeight: '700', marginLeft: 'auto' },
-  selectedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 12,
-    marginBottom: 8,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '30',
-  },
-  splitAmountText: { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
-  removeIcon:    { fontSize: 16, color: COLORS.danger, padding: 4 },
+
   summary: {
     backgroundColor: COLORS.lightGrey,
     borderRadius: 16,
@@ -304,9 +393,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     gap: 8,
   },
-  summaryRow:    { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryLabel:  { fontSize: 14, color: COLORS.grey },
-  summaryValue:  { fontSize: 14, fontWeight: '700', color: COLORS.dark },
+  summaryRow:   { flexDirection: 'row', justifyContent: 'space-between' },
+  summaryLabel: { fontSize: 14, color: COLORS.grey },
+  summaryValue: { fontSize: 14, fontWeight: '700', color: COLORS.dark },
+
   createBtn: {
     backgroundColor: COLORS.primary,
     borderRadius: 16,

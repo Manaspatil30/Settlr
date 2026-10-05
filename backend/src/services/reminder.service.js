@@ -1,6 +1,6 @@
 const Bull  = require('bull');
 const pool  = require('../config/db');
-const { sendDebtReminder } = require('./notification.service');
+const { sendDebtReminder, sendSplitNudge } = require('./notification.service');
 
 // Redis-backed job queue
 const reminderQueue = new Bull('reminders', {
@@ -14,11 +14,15 @@ const reminderQueue = new Bull('reminders', {
 // PROCESS JOBS
 // ─────────────────────────────────────────
 reminderQueue.process(async (job) => {
-  const { type, split_id, debt_id, user_id } = job.data;
-  console.log(`⏰ Processing reminder job: ${type} for split ${split_id}`);
+  const { type, split_id, debt_id } = job.data;
+  console.log(`⏰ Processing reminder job: ${type}`, { split_id, debt_id });
 
   if (type === 'no_response_check') {
     await handleNoResponseCheck(split_id);
+  }
+
+  if (type === 'split_nudge') {
+    await sendSplitNudge(split_id);
   }
 
   if (type === 'debt_reminder') {
@@ -92,14 +96,31 @@ const scheduleNoResponseCheck = async (split_id, delayMs = 60 * 60 * 1000) => {
 };
 
 // ─────────────────────────────────────────
-// Schedule Day 1, Day 3, Day 7 reminders
-// for no_response debts
+// Schedule a pre-response nudge
+// Fires while split is still pending
+// ─────────────────────────────────────────
+const scheduleSplitNudge = async (split_id, delayMs) => {
+  await reminderQueue.add(
+    { type: 'split_nudge', split_id },
+    { delay: delayMs, attempts: 3, jobId: `${split_id}-nudge-${delayMs}` }
+  );
+};
+
+// ─────────────────────────────────────────
+// Schedule persistent reminders after debt created
+// Fires Day 1, 2, 3, 5, 7, 10, 14
+// Each job self-cancels if debt already settled
 // ─────────────────────────────────────────
 const scheduleNoResponseReminders = async (debt_id) => {
+  const DAY = 24 * 60 * 60 * 1000;
   const delays = [
-    { label: 'day1', ms: 1  * 24 * 60 * 60 * 1000 },
-    { label: 'day3', ms: 3  * 24 * 60 * 60 * 1000 },
-    { label: 'day7', ms: 7  * 24 * 60 * 60 * 1000 },
+    { label: 'day1',  ms: 1  * DAY },
+    { label: 'day2',  ms: 2  * DAY },
+    { label: 'day3',  ms: 3  * DAY },
+    { label: 'day5',  ms: 5  * DAY },
+    { label: 'day7',  ms: 7  * DAY },
+    { label: 'day10', ms: 10 * DAY },
+    { label: 'day14', ms: 14 * DAY },
   ];
 
   for (const { label, ms } of delays) {
@@ -109,24 +130,24 @@ const scheduleNoResponseReminders = async (debt_id) => {
     );
   }
 
-  console.log(`⏰ Day 1/3/7 reminders scheduled for debt ${debt_id}`);
+  console.log(`⏰ Persistent reminders (Day 1-14) scheduled for debt ${debt_id}`);
 };
 
 // ─────────────────────────────────────────
 // Schedule Pay Later reminder
 // Fires 1 day before due date
 // ─────────────────────────────────────────
-const schedulePayLaterReminder = async (split_id, user_id, due_date) => {
-  const dueMs   = new Date(due_date).getTime();
-  const nowMs   = Date.now();
+const schedulePayLaterReminder = async (debt_id, due_date) => {
+  const dueMs    = new Date(due_date).getTime();
+  const nowMs    = Date.now();
   const oneDayMs = 24 * 60 * 60 * 1000;
 
   // Reminder 1 day before
   const beforeDelay = dueMs - oneDayMs - nowMs;
   if (beforeDelay > 0) {
     await reminderQueue.add(
-      { type: 'debt_reminder', split_id, user_id },
-      { delay: beforeDelay, attempts: 3, jobId: `${split_id}-before-due` }
+      { type: 'debt_reminder', debt_id },
+      { delay: beforeDelay, attempts: 3, jobId: `${debt_id}-before-due` }
     );
   }
 
@@ -134,16 +155,17 @@ const schedulePayLaterReminder = async (split_id, user_id, due_date) => {
   const onDueDelay = dueMs - nowMs;
   if (onDueDelay > 0) {
     await reminderQueue.add(
-      { type: 'debt_reminder', split_id, user_id },
-      { delay: onDueDelay, attempts: 3, jobId: `${split_id}-on-due` }
+      { type: 'debt_reminder', debt_id },
+      { delay: onDueDelay, attempts: 3, jobId: `${debt_id}-on-due` }
     );
   }
 
-  console.log(`⏰ Pay-later reminders scheduled for split ${split_id}`);
+  console.log(`⏰ Pay-later reminders scheduled for debt ${debt_id}`);
 };
 
 module.exports = {
   scheduleNoResponseCheck,
   scheduleNoResponseReminders,
-  schedulePayLaterReminder
+  schedulePayLaterReminder,
+  scheduleSplitNudge,
 };

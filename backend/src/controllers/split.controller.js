@@ -157,16 +157,19 @@ const payLaterSplit = async (req, res, next) => {
     );
 
     // Create debt record — type: pay_later
-    await client.query(
+    const debtResult = await client.query(
       `INSERT INTO debts (split_id, debtor_id, creditor_id, amount, type, due_date)
-       VALUES ($1, $2, $3, $4, 'pay_later', $5)`,
+       VALUES ($1, $2, $3, $4, 'pay_later', $5)
+       RETURNING id`,
       [split.id, req.user.id, split.payer_id, split.amount, due_date]
     );
 
     await client.query('COMMIT');
 
+    const debt_id = debtResult.rows[0].id;
+
     // Schedule reminder 1 day before due date
-    await schedulePayLaterReminder(split.id, req.user.id, due_date);
+    await schedulePayLaterReminder(debt_id, due_date);
 
     // Notify payer
     await sendPayerNotification(split.payer_id, {

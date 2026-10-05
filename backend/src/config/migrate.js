@@ -171,6 +171,21 @@ const migrate = async () => {
     console.log('  ✅ disputes table ready');
 
     // ─────────────────────────────────────────
+    // TABLE: FRIENDS
+    // ─────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS friends (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        friend_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(user_id, friend_id)
+      );
+    `);
+
+    console.log('  ✅ friends table ready');
+
+    // ─────────────────────────────────────────
     // INDEXES — speeds up common queries
     // ─────────────────────────────────────────
     await client.query(`

@@ -6,6 +6,7 @@ const {
   getAuthUrl,
   exchangeCode,
   getTransactions,
+  refreshToken,
 } = require('../services/truelayer.service');
 const { sendPushToUser } = require('../services/notification.service');
 
@@ -80,7 +81,44 @@ router.post('/check-transactions', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Bank not connected' });
     }
 
-    const transactions = await getTransactions(user.truelayer_access_token);
+    let { truelayer_access_token: accessToken, truelayer_refresh_token: refreshTokenValue } = user;
+
+    // Try fetching transactions; if token expired (401) refresh and retry once
+    let transactions;
+    try {
+      transactions = await getTransactions(accessToken);
+    } catch (err) {
+      if (err.response?.status !== 401) throw err;
+
+      // Access token expired — try to refresh
+      try {
+        const newTokens = await refreshToken(refreshTokenValue);
+        accessToken = newTokens.access_token;
+
+        await pool.query(
+          `UPDATE users SET
+            truelayer_access_token  = $1,
+            truelayer_refresh_token = $2,
+            updated_at              = NOW()
+           WHERE id = $3`,
+          [newTokens.access_token, newTokens.refresh_token || refreshTokenValue, req.user.id]
+        );
+
+        transactions = await getTransactions(accessToken);
+      } catch (refreshErr) {
+        // Refresh token also expired — mark bank as disconnected so user reconnects
+        await pool.query(
+          `UPDATE users SET
+            truelayer_connected     = FALSE,
+            truelayer_access_token  = NULL,
+            truelayer_refresh_token = NULL,
+            updated_at              = NOW()
+           WHERE id = $1`,
+          [req.user.id]
+        );
+        return res.status(400).json({ error: 'Bank session expired. Please reconnect your bank from Profile.' });
+      }
+    }
 
     if (transactions.length === 0) {
       return res.json({ message: 'No recent transactions' });
@@ -93,9 +131,11 @@ router.post('/check-transactions', authenticate, async (req, res, next) => {
 
     // Send push notification asking if they want to split
     await sendPushToUser(req.user.id, {
-      title: '💸 Split this payment?',
-      body:  `You paid £${amount} at ${merchant} — split with friends?`,
+      title:      '💸 Split this payment?',
+      body:       `You paid £${amount} at ${merchant}`,
+      categoryId: 'PAYMENT_SPLIT',
       data:  {
+        type:     'banking:transaction',
         screen:   'NewSplit',
         amount,
         merchant,
