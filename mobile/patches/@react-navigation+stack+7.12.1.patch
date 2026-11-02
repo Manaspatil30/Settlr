@@ -1,0 +1,18 @@
+diff --git a/node_modules/@react-navigation/stack/lib/module/views/InteractionManager.js b/node_modules/@react-navigation/stack/lib/module/views/InteractionManager.js
+index 2eb59cc..222d060 100644
+--- a/node_modules/@react-navigation/stack/lib/module/views/InteractionManager.js
++++ b/node_modules/@react-navigation/stack/lib/module/views/InteractionManager.js
+@@ -1,10 +1,10 @@
+ "use strict";
+ 
+-/* eslint-disable no-restricted-imports */
+-import * as ReactNative from 'react-native';
+ let InteractionManager;
+ try {
+-  InteractionManager = ReactNative.InteractionManager;
++  // Use require() to avoid interopRequireWildcard iterating all exports
++  // which would trigger RN 0.82+'s throwing getter in __DEV__ mode
++  InteractionManager = require('react-native').InteractionManager;
+ } catch (e) {
+   // On newer React Native versions, accessing InteractionManager throws an error
+   // https://github.com/react/react-native/pull/57026
